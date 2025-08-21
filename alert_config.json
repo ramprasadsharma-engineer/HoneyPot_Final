@@ -1,0 +1,18 @@
+{
+  "email": {
+    "enabled": false,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "",
+    "password": "",
+    "recipients": []
+  },
+  "slack": {
+    "enabled": false,
+    "webhook_url": ""
+  },
+  "thresholds": {
+    "high_threat_alert": 50,
+    "critical_threat_alert": 80
+  }
+}

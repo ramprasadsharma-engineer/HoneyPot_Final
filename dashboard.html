@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Honeypot Intelligence Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            overflow-x: hidden;
+        }
+        
+        .dashboard-header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .dashboard-header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-online { background-color: #4CAF50; }
+        .status-offline { background-color: #f44336; }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .dashboard-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .card-header {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #fff;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #4CAF50;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .metric-label {
+            text-align: center;
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+        
+        .alert-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .alert-item {
+            background: rgba(244, 67, 54, 0.2);
+            border-left: 4px solid #f44336;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            animation: slideIn 0.5s ease;
+        }
+        
+        .alert-item.high-threat {
+            border-left-color: #ff5722;
+            background: rgba(255, 87, 34, 0.2);
+        }
+        
+        .alert-item.critical-threat {
+            border-left-color: #d32f2f;
+            background: rgba(211, 47, 47, 0.3);
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.7; }
+        }
+        
+        .chart-container {
+            height: 300px;
+            width: 100%;
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .two-column {
+            grid-column: span 2;
+        }
+        
+        .threat-gauge {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+        }
+        
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 10px 20px;
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .ip-map {
+            height: 400px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1em;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .stat-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .stat-label {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-header">
+        <h1>🛡️ Advanced Honeypot Intelligence Dashboard</h1>
+        <p>Real-time Threat Detection & Analysis System</p>
+    </div>
+    
+    <div class="connection-status">
+        <span class="status-indicator status-offline" id="connectionStatus"></span>
+        <span id="connectionText">Connecting...</span>
+    </div>
+    
+    <div class="dashboard-grid">
+        <!-- Live Threat Level -->
+        <div class="dashboard-card">
+            <div class="card-header">🚨 Current Threat Level</div>
+            <div class="threat-gauge">
+                <canvas id="threatGauge" width="200" height="200"></canvas>
+            </div>
+            <div class="metric-label" id="threatStatus">Monitoring...</div>
+        </div>
+        
+        <!-- Real-time Stats -->
+        <div class="dashboard-card">
+            <div class="card-header">📊 Live Statistics</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" id="totalAttacks">0</div>
+                    <div class="stat-label">Total Attacks</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="uniqueIPs">0</div>
+                    <div class="stat-label">Unique IPs</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="highThreatEvents">0</div>
+                    <div class="stat-label">High Threat Events</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="avgThreatScore">0</div>
+                    <div class="stat-label">Avg Threat Score</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Alerts -->
+        <div class="dashboard-card">
+            <div class="card-header">🔔 Recent Alerts</div>
+            <div class="alert-list" id="alertList">
+                <div style="text-align: center; opacity: 0.6; margin-top: 50px;">
+                    No alerts yet...
+                </div>
+            </div>
+        </div>
+        
+        <!-- Attack Timeline -->
+        <div class="dashboard-card two-column">
+            <div class="card-header">📈 Attack Timeline (Last 24 Hours)</div>
+            <div class="chart-container">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Geographic Attacks -->
+        <div class="dashboard-card">
+            <div class="card-header">🌍 Attack Sources</div>
+            <div class="ip-map" id="attackMap">
+                <div>Geographic visualization loading...</div>
+            </div>
+        </div>
+        
+        <!-- Attack Types Distribution -->
+        <div class="dashboard-card">
+            <div class="card-header">🎯 Attack Types</div>
+            <div class="chart-container">
+                <canvas id="attackTypesChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Top Attackers -->
+        <div class="dashboard-card">
+            <div class="card-header">👥 Top Attack Sources</div>
+            <div class="chart-container">
+                <canvas id="topAttackersChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- System Health -->
+        <div class="dashboard-card full-width">
+            <div class="card-header">💻 Honeypot System Health</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" id="systemUptime">0h</div>
+                    <div class="stat-label">System Uptime</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="logFileSize">0 MB</div>
+                    <div class="stat-label">Log File Size</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="avgResponseTime">0ms</div>
+                    <div class="stat-label">Avg Response Time</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="sessionsActive">0</div>
+                    <div class="stat-label">Active Sessions</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        class HoneypotDashboard {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.stats = {
+                    totalAttacks: 0,
+                    uniqueIPs: new Set(),
+                    highThreatEvents: 0,
+                    threatScores: [],
+                    attackTypes: {},
+                    recentAlerts: [],
+                    attackTimeline: []
+                };
+                
+                this.initCharts();
+                this.connectWebSocket();
+                this.updateDashboard();
+                
+                // Update dashboard every 5 seconds
+                setInterval(() => this.updateDashboard(), 5000);
+            }
+            
+            connectWebSocket() {
+                try {
+                    this.ws = new WebSocket('ws://localhost:8765');
+                    
+                    this.ws.onopen = () => {
+                        this.isConnected = true;
+                        this.updateConnectionStatus();
+                        console.log('Connected to honeypot monitor');
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        this.handleWebSocketMessage(data);
+                    };
+                    
+                    this.ws.onclose = () => {
+                        this.isConnected = false;
+                        this.updateConnectionStatus();
+                        console.log('Disconnected from honeypot monitor');
+                        
+                        // Attempt to reconnect after 5 seconds
+                        setTimeout(() => this.connectWebSocket(), 5000);
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to connect to WebSocket:', error);
+                    setTimeout(() => this.connectWebSocket(), 5000);
+                }
+            }
+            
+            handleWebSocketMessage(data) {
+                if (data.type === 'status') {
+                    console.log('Status update:', data.message);
+                } else if (data.type === 'high_threat_command' || data.type === 'suspicious_login_pattern') {
+                    this.processAlert(data);
+                }
+            }
+            
+            processAlert(alert) {
+                // Update statistics
+                this.stats.totalAttacks++;
+                this.stats.uniqueIPs.add(alert.src_ip);
+                
+                if (alert.threat_level > 50) {
+                    this.stats.highThreatEvents++;
+                }
+                
+                this.stats.threatScores.push(alert.threat_level);
+                if (this.stats.threatScores.length > 100) {
+                    this.stats.threatScores.shift();
+                }
+                
+                // Track attack types
+                if (alert.detected_attacks) {
+                    alert.detected_attacks.forEach(attackType => {
+                        this.stats.attackTypes[attackType] = (this.stats.attackTypes[attackType] || 0) + 1;
+                    });
+                }
+                
+                // Add to recent alerts
+                this.stats.recentAlerts.unshift(alert);
+                if (this.stats.recentAlerts.length > 10) {
+                    this.stats.recentAlerts.pop();
+                }
+                
+                // Update timeline
+                const now = new Date();
+                this.stats.attackTimeline.push({
+                    time: now,
+                    count: 1,
+                    threatLevel: alert.threat_level
+                });
+                
+                // Keep only last 24 hours
+                const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                this.stats.attackTimeline = this.stats.attackTimeline.filter(entry => entry.time > oneDayAgo);
+                
+                this.updateDashboard();
+            }
+            
+            updateConnectionStatus() {
+                const statusIndicator = document.getElementById('connectionStatus');
+                const statusText = document.getElementById('connectionText');
+                
+                if (this.isConnected) {
+                    statusIndicator.className = 'status-indicator status-online';
+                    statusText.textContent = 'Connected';
+                } else {
+                    statusIndicator.className = 'status-indicator status-offline';
+                    statusText.textContent = 'Disconnected';
+                }
+            }
+            
+            updateDashboard() {
+                // Update stats
+                document.getElementById('totalAttacks').textContent = this.stats.totalAttacks;
+                document.getElementById('uniqueIPs').textContent = this.stats.uniqueIPs.size;
+                document.getElementById('highThreatEvents').textContent = this.stats.highThreatEvents;
+                
+                const avgThreat = this.stats.threatScores.length > 0 
+                    ? Math.round(this.stats.threatScores.reduce((a, b) => a + b, 0) / this.stats.threatScores.length)
+                    : 0;
+                document.getElementById('avgThreatScore').textContent = avgThreat;
+                
+                // Update threat gauge
+                this.updateThreatGauge(avgThreat);
+                
+                // Update alerts list
+                this.updateAlertsList();
+                
+                // Update charts
+                this.updateCharts();
+                
+                // Simulate system health updates
+                this.updateSystemHealth();
+            }
+            
+            updateThreatGauge(threatLevel) {
+                const canvas = document.getElementById('threatGauge');
+                const ctx = canvas.getContext('2d');
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const radius = 80;
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Background circle
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.lineWidth = 10;
+                ctx.stroke();
+                
+                // Threat level arc
+                const startAngle = -Math.PI / 2;
+                const endAngle = startAngle + (threatLevel / 100) * 2 * Math.PI;
+                
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+                
+                if (threatLevel < 30) {
+                    ctx.strokeStyle = '#4CAF50';
+                } else if (threatLevel < 70) {
+                    ctx.strokeStyle = '#FF9800';
+                } else {
+                    ctx.strokeStyle = '#f44336';
+                }
+                
+                ctx.lineWidth = 10;
+                ctx.stroke();
+                
+                // Center text
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(threatLevel, centerX, centerY + 5);
+                
+                // Status text
+                const statusText = document.getElementById('threatStatus');
+                if (threatLevel < 30) {
+                    statusText.textContent = 'Low Risk';
+                    statusText.style.color = '#4CAF50';
+                } else if (threatLevel < 70) {
+                    statusText.textContent = 'Medium Risk';
+                    statusText.style.color = '#FF9800';
+                } else {
+                    statusText.textContent = 'High Risk';
+                    statusText.style.color = '#f44336';
+                }
+            }
+            
+            updateAlertsList() {
+                const alertList = document.getElementById('alertList');
+                
+                if (this.stats.recentAlerts.length === 0) {
+                    alertList.innerHTML = '<div style="text-align: center; opacity: 0.6; margin-top: 50px;">No alerts yet...</div>';
+                    return;
+                }
+                
+                alertList.innerHTML = this.stats.recentAlerts.map(alert => {
+                    const time = new Date(alert.timestamp).toLocaleTimeString();
+                    const threatClass = alert.threat_level > 70 ? 'critical-threat' : 
+                                      alert.threat_level > 40 ? 'high-threat' : '';
+                    
+                    return `
+                        <div class="alert-item ${threatClass}">
+                            <div style="font-weight: bold;">${alert.type.replace(/_/g, ' ').toUpperCase()}</div>
+                            <div>IP: ${alert.src_ip} | Threat: ${alert.threat_level}</div>
+                            <div style="font-size: 0.8em; opacity: 0.8;">${time}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            updateSystemHealth() {
+                // Simulate system health metrics
+                const uptime = Math.floor(Date.now() / 1000 / 3600); // Hours since epoch
+                document.getElementById('systemUptime').textContent = `${uptime % 24}h`;
+                document.getElementById('logFileSize').textContent = `${(Math.random() * 100 + 50).toFixed(1)} MB`;
+                document.getElementById('avgResponseTime').textContent = `${Math.floor(Math.random() * 50 + 10)}ms`;
+                document.getElementById('sessionsActive').textContent = Math.floor(Math.random() * 10 + 1);
+            }
+            
+            initCharts() {
+                // Initialize Chart.js charts
+                const timelineCtx = document.getElementById('timelineChart').getContext('2d');
+                this.timelineChart = new Chart(timelineCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Attacks per Hour',
+                            data: [],
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+                
+                const attackTypesCtx = document.getElementById('attackTypesChart').getContext('2d');
+                this.attackTypesChart = new Chart(attackTypesCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            backgroundColor: ['#f44336', '#FF9800', '#4CAF50', '#2196F3', '#9C27B0']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' }
+                        }
+                    }
+                });
+                
+                const topAttackersCtx = document.getElementById('topAttackersChart').getContext('2d');
+                this.topAttackersChart = new Chart(topAttackersCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Attacks',
+                            data: [],
+                            backgroundColor: '#f44336'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+            
+            updateCharts() {
+                // Update timeline chart
+                const hourlyData = this.aggregateHourlyData();
+                this.timelineChart.data.labels = hourlyData.labels;
+                this.timelineChart.data.datasets[0].data = hourlyData.data;
+                this.timelineChart.update();
+                
+                // Update attack types chart
+                const attackTypeLabels = Object.keys(this.stats.attackTypes);
+                const attackTypeData = Object.values(this.stats.attackTypes);
+                this.attackTypesChart.data.labels = attackTypeLabels;
+                this.attackTypesChart.data.datasets[0].data = attackTypeData;
+                this.attackTypesChart.update();
+                
+                // Update top attackers chart (simulate data)
+                const topIPs = Array.from(this.stats.uniqueIPs).slice(0, 5);
+                const attackCounts = topIPs.map(() => Math.floor(Math.random() * 20 + 1));
+                this.topAttackersChart.data.labels = topIPs;
+                this.topAttackersChart.data.datasets[0].data = attackCounts;
+                this.topAttackersChart.update();
+            }
+            
+            aggregateHourlyData() {
+                const now = new Date();
+                const hours = [];
+                const data = [];
+                
+                for (let i = 23; i >= 0; i--) {
+                    const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
+                    hours.push(hour.getHours() + ':00');
+                    
+                    const attacksInHour = this.stats.attackTimeline.filter(attack => {
+                        const attackHour = attack.time.getHours();
+                        return attackHour === hour.getHours();
+                    }).length;
+                    
+                    data.push(attacksInHour);
+                }
+                
+                return { labels: hours, data: data };
+            }
+        }
+        
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new HoneypotDashboard();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+Advanced Honeypot Threat Report
+Generated: Sun Aug  3 12:33:51 UTC 2025
+================================
+
+EXECUTIVE SUMMARY:
+- Total attack events: 
+- Failed login attempts: 0  
+- Commands executed: 0
+- Risk Level: HIGH
+
+TOP THREATS DETECTED:
+- Malware download attempts (wget/curl)
+- Remote code execution (python -c)
+- System destruction attempts (rm -rf)
+- Data exfiltration (tar commands)
+- Privilege escalation (sudo)
+
+RECOMMENDATIONS:
+1. Implement IP-based blocking for repeat offenders
+2. Monitor for lateral movement patterns
+3. Update intrusion detection signatures
+4. Review system access controls
+5. Enable real-time alerting
