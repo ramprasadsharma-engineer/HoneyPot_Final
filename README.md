@@ -77,6 +77,7 @@ python -c "from ai_threat_intel import AIThreatIntelligence; ai = AIThreatIntell
 - **Documentation**: `http://localhost:8888/api/docs`
 - **Interactive Testing**: `http://localhost:8888/api/redoc`
 - **Authentication**: Use token `demo_token_12345` for testing
+- **Metrics**: Prometheus scrape endpoint at `http://localhost:8888/metrics`
 
 #### Quick API Tests
 ```bash
@@ -119,6 +120,10 @@ The system works out of the box with default settings. For customization:
 - **Log File**: `log/cowrie.json` (sample data included)
 - **Database**: SQLite database created automatically
 - **Alerts**: Configure email settings in `alert_config.json` if needed
+- **Environment Variables**: You can set these in a `.env` file or your shell:
+  - `HONEYPOT_API_TOKEN` — overrides the API bearer token
+  - `HONEYPOT_CORS_ORIGINS` — comma-separated list of allowed origins (default `*`)
+  - `HONEYPOT_STATIC_DIR` — path for static assets (default `static`)
 
 ## 📈 What You'll See
 
