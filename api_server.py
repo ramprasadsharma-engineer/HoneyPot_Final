@@ -21,10 +21,26 @@ import os
 from parse_logs import AdvancedHoneypotAnalyzer
 from ai_threat_intel import AIThreatIntelligence, AutomatedResponseSystem
 import logging
+from fastapi import Response, Request
+import time
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Environment-based configuration
+load_dotenv()
+API_TOKEN = os.getenv("HONEYPOT_API_TOKEN", "demo_token_12345")
+CORS_ORIGINS = os.getenv("HONEYPOT_CORS_ORIGINS", "*")
+STATIC_DIR = os.getenv("HONEYPOT_STATIC_DIR", "static")
+
+# Derived config
+origins_list = ["*"] if CORS_ORIGINS.strip() == "*" else [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
+
+# Ensure static directory exists before mounting
+os.makedirs(STATIC_DIR, exist_ok=True)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -38,7 +54,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,6 +62,26 @@ app.add_middleware(
 
 # Security
 security = HTTPBearer()
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "path", "status_code"],
+)
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["method", "path"],
+)
+PREDICTIONS_TOTAL = Counter(
+    "threat_predictions_total",
+    "Total threat analysis predictions",
+)
+ALERTS_CREATED_TOTAL = Counter(
+    "alerts_created_total",
+    "Total alerts created",
+)
 
 # Global instances
 analyzer = AdvancedHoneypotAnalyzer()
@@ -98,12 +134,32 @@ class SystemStatus(BaseModel):
 async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     """Verify API token (simplified for demo)"""
     # In production, implement proper JWT token validation
-    if credentials.credentials != "demo_token_12345":
+    if credentials.credentials != API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid authentication token")
     return credentials.credentials
 
 # Static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Metrics middleware
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start_time
+
+    method = request.method
+    path = request.url.path
+
+    # Record metrics
+    REQUEST_COUNT.labels(method=method, path=path, status_code=str(response.status_code)).inc()
+    REQUEST_LATENCY.labels(method=method, path=path).observe(duration)
+    return response
+
+# Metrics endpoint
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
@@ -218,6 +274,7 @@ async def analyze_threat(
             "timestamp": datetime.now().isoformat()
         }
         
+        PREDICTIONS_TOTAL.inc()
         return result
         
     except Exception as e:
@@ -343,6 +400,7 @@ async def create_alert(
         # Process alert in background
         background_tasks.add_task(process_alert_background, alert, alert_id)
         
+        ALERTS_CREATED_TOTAL.inc()
         return {
             "alert_id": alert_id,
             "status": "created",
