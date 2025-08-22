@@ -9,7 +9,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
-from pydantic import BaseModel
+try:
+	from pydantic import BaseModel
+	from pydantic import Field
+	PYDANTIC_V2 = True
+except Exception:
+	from pydantic import BaseModel  # type: ignore
+	Field = None  # type: ignore
+	PYDANTIC_V2 = False
 from typing import List, Optional, Dict, Any
 import asyncio
 import json
@@ -468,7 +475,7 @@ async def get_ip_intelligence(
         if result:
             return IPIntelligence(
                 ip_address=ip_address,
-                reputation_score=result[0],
+                reputation_score=int(result[0]),
                 threat_categories=result[1].split(',') if result[1] else [],
                 country=result[2],
                 asn=result[3],
@@ -477,13 +484,25 @@ async def get_ip_intelligence(
         else:
             # Get fresh intelligence
             intel_data = await ai_intel.enrich_with_external_intel(ip_address)
+            # Persist to DB for next time
+            try:
+                ThreatDatabase(analyzer.db_path).store_ip_intelligence({
+                    'ip_address': ip_address,
+                    'reputation_score': intel_data.get('reputation_score', 0),
+                    'threat_categories': intel_data.get('categories', []),
+                    'country': intel_data.get('country', 'Unknown'),
+                    'asn': intel_data.get('asn', 'Unknown'),
+                    'threat_feeds': intel_data.get('threat_feeds', [])
+                })
+            except Exception:
+                pass
             return IPIntelligence(
                 ip_address=ip_address,
-                reputation_score=intel_data['reputation_score'],
-                threat_categories=intel_data['categories'],
+                reputation_score=int(intel_data.get('reputation_score', 0)),
+                threat_categories=intel_data.get('categories', []),
                 country=intel_data.get('country', 'Unknown'),
                 asn=intel_data.get('asn', 'Unknown'),
-                threat_feeds=intel_data['threat_feeds']
+                threat_feeds=intel_data.get('threat_feeds', [])
             )
             
     except Exception as e:
@@ -687,7 +706,7 @@ async def export_data(
     """Export honeypot data"""
     try:
         if format not in ["json", "csv"]:
-            raise HTTPException(status_code=400, detail="Unsupported format")
+            return Response(content=json.dumps({"detail": "Unsupported format"}), media_type="application/json", status_code=400)
         
         # Get data from database
         conn = sqlite3.connect(analyzer.db_path)

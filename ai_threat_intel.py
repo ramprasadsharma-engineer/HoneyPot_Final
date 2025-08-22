@@ -219,7 +219,7 @@ class AIThreatIntelligence:
     def predict_threat(self, command, session_data):
         """Predict threat type and risk level for a command"""
         if not self.classifier:
-            return {'threat_type': 'unknown', 'confidence': 0, 'risk_score': 50}
+            return {'threat_type': 'unknown', 'confidence': 0.0, 'risk_score': 50, 'is_anomaly': False}
         
         # Extract features
         features = self.extract_features(command, session_data)
@@ -418,7 +418,7 @@ class ThreatDatabase:
         conn.commit()
         conn.close()
     
-    def store_prediction(self, command, session_id, src_ip, prediction):
+    def store_prediction(self, prediction_data):
         """Store threat prediction in database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -428,15 +428,19 @@ class ThreatDatabase:
             (command, session_id, src_ip, predicted_threat, confidence, risk_score, is_anomaly)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            command, session_id, src_ip,
-            prediction['threat_type'], prediction['confidence'],
-            prediction['risk_score'], prediction['is_anomaly']
+            prediction_data.get('command', ''),
+            prediction_data.get('session_id', ''),
+            prediction_data.get('src_ip', ''),
+            prediction_data.get('predicted_threat', ''),
+            float(prediction_data.get('confidence', 0.0)),
+            int(prediction_data.get('risk_score', 0)),
+            bool(prediction_data.get('is_anomaly', False))
         ))
         
         conn.commit()
         conn.close()
     
-    def store_ip_intelligence(self, ip_address, intel_data):
+    def store_ip_intelligence(self, intel_data):
         """Store IP intelligence data"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -447,14 +451,14 @@ class ThreatDatabase:
              first_seen, last_seen, threat_feeds)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            ip_address,
-            intel_data['reputation_score'],
-            ','.join(intel_data['categories']),
+            intel_data.get('ip_address') or intel_data.get('ip', ''),
+            int(intel_data.get('reputation_score', 0)),
+            ','.join(intel_data.get('threat_categories') or intel_data.get('categories') or []),
             intel_data.get('country', 'Unknown'),
             intel_data.get('asn', 'Unknown'),
             datetime.now().isoformat(),
             datetime.now().isoformat(),
-            ','.join(intel_data['threat_feeds'])
+            ','.join(intel_data.get('threat_feeds', []))
         ))
         
         conn.commit()
@@ -476,6 +480,15 @@ class AutomatedResponseSystem:
             'alert_critical': 60,
             'evidence_collect': 50
         }
+    
+    def calculate_combined_risk(self, prediction, ip_intel):
+        """Combine model risk and IP reputation into a single 0-100 risk score"""
+        model_risk = float(prediction.get('risk_score', 0))
+        reputation = float(ip_intel.get('reputation_score', 50))
+        # Lower reputation -> higher risk contribution; invert and weight
+        reputation_risk = max(0.0, 100.0 - reputation)
+        combined = 0.7 * model_risk + 0.3 * reputation_risk
+        return max(0.0, min(100.0, combined))
     
     async def evaluate_and_respond(self, threat_prediction, ip_intelligence, session_data):
         """Evaluate threat and trigger appropriate responses"""

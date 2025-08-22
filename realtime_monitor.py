@@ -32,7 +32,8 @@ class ThreatDetectionEngine:
             ],
             'command_injection': [
                 r";.*rm\s+-rf", r"&&.*cat", r"\|\s*nc", r"wget.*http", 
-                r"curl.*-o", r"bash.*-c", r"python.*-c", r"perl.*-e"
+                r"curl\s+.*\|\s*bash", r"bash.*-c", r"python.*-c", r"perl.*-e",
+                r"rm\s+-rf", r"nc\s+.*-e\s+/bin/bash"
             ],
             'cryptomining': [
                 r"xmrig", r"stratum\+tcp", r"monero", r"mining", 
@@ -187,8 +188,12 @@ class RealTimeMonitor(FileSystemEventHandler):
                 
                 self.alert_queue.put(alert)
                 
-                # Send to WebSocket clients
-                asyncio.create_task(self.broadcast_alert(alert))
+                # Send to WebSocket clients (only if running loop)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.broadcast_alert(alert))
+                except RuntimeError:
+                    pass
         
         # Failed login analysis
         elif event_id == 'cowrie.login.failed':
@@ -208,7 +213,11 @@ class RealTimeMonitor(FileSystemEventHandler):
                 }
                 
                 self.alert_queue.put(alert)
-                asyncio.create_task(self.broadcast_alert(alert))
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.broadcast_alert(alert))
+                except RuntimeError:
+                    pass
 
     def is_suspicious_login_pattern(self, src_ip, username, password):
         """Detect suspicious login patterns"""
@@ -306,6 +315,9 @@ class AlertManager:
         
         # Log to database
         self.log_alert_to_db(alert)
+        
+        # Record in history immediately
+        self.alert_history.append(alert)
 
     def send_email_alert(self, alert):
         """Send email alert"""
