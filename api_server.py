@@ -26,6 +26,7 @@ import time
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from dotenv import load_dotenv
 import uuid
+from fastapi import WebSocket, WebSocketDisconnect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -170,10 +171,82 @@ async def request_id_middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     return response
 
+# Structured access log middleware (JSON)
+@app.middleware("http")
+async def access_log_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = int((time.perf_counter() - start) * 1000)
+
+    request_id = response.headers.get("X-Request-ID") or request.headers.get("x-request-id")
+    log_record = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "level": "INFO",
+        "message": "access",
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "duration_ms": duration_ms,
+        "client_ip": getattr(request.client, "host", None),
+        "user_agent": request.headers.get("user-agent"),
+        "request_id": request_id,
+    }
+    try:
+        logger.info(json.dumps(log_record))
+    except Exception:
+        logger.info(str(log_record))
+    return response
+
 # Metrics endpoint
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: Dict[str, Any]):
+        text = json.dumps(message)
+        to_remove = []
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(text)
+            except Exception:
+                to_remove.append(connection)
+        for conn in to_remove:
+            self.disconnect(conn)
+
+manager = ConnectionManager()
+
+@app.websocket("/ws/events")
+async def websocket_events(websocket: WebSocket):
+    try:
+        await manager.connect(websocket)
+        # Keep the connection open; ignore incoming messages
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
+
+async def broadcast_event(event_type: str, payload: Dict[str, Any]):
+    event = {
+        "type": event_type,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "payload": payload,
+    }
+    await manager.broadcast(event)
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
@@ -320,6 +393,11 @@ async def analyze_threat(
         }
         
         PREDICTIONS_TOTAL.inc()
+        # Broadcast event to WebSocket clients
+        try:
+            await broadcast_event("threat", result)
+        except Exception:
+            pass
         return result
         
     except Exception as e:
@@ -446,11 +524,24 @@ async def create_alert(
         background_tasks.add_task(process_alert_background, alert, alert_id)
         
         ALERTS_CREATED_TOTAL.inc()
-        return {
+        response_payload = {
             "alert_id": alert_id,
             "status": "created",
             "timestamp": datetime.now().isoformat()
         }
+        # Broadcast alert event to WebSocket clients
+        try:
+            await broadcast_event("alert", {
+                "id": alert_id,
+                "alert_type": alert.alert_type,
+                "src_ip": alert.src_ip,
+                "threat_level": alert.threat_level,
+                "description": alert.description,
+                "metadata": alert.metadata or {}
+            })
+        except Exception:
+            pass
+        return response_payload
         
     except Exception as e:
         logger.error(f"Error creating alert: {e}")
