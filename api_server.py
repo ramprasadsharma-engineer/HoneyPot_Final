@@ -21,10 +21,11 @@ import os
 from parse_logs import AdvancedHoneypotAnalyzer
 from ai_threat_intel import AIThreatIntelligence, AutomatedResponseSystem
 import logging
-from fastapi import Response, Request
+from fastapi import Response, Request, Body
 import time
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from dotenv import load_dotenv
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -122,6 +123,11 @@ class AlertCreate(BaseModel):
     description: str
     metadata: Optional[Dict[str, Any]] = None
 
+class AnalyzeRequest(BaseModel):
+    command: str
+    session_id: str
+    src_ip: str
+
 class SystemStatus(BaseModel):
     status: str
     uptime: int
@@ -156,6 +162,14 @@ async def prometheus_middleware(request: Request, call_next):
     REQUEST_LATENCY.labels(method=method, path=path).observe(duration)
     return response
 
+# Request ID middleware
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 # Metrics endpoint
 @app.get("/metrics")
 async def metrics():
@@ -175,6 +189,27 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness probe endpoint"""
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness probe endpoint with basic dependency checks"""
+    reasons = []
+    try:
+        conn = sqlite3.connect(analyzer.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        conn.close()
+    except Exception as e:
+        reasons.append(f"database_unavailable: {e}")
+    # Consider AI model optional for readiness in demo
+    if reasons:
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "reasons": reasons})
+    return {"status": "ready", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/status", response_model=SystemStatus)
 async def get_system_status(token: str = Depends(verify_token)):
@@ -239,13 +274,23 @@ async def get_attack_summary(
 
 @app.post("/api/threats/analyze")
 async def analyze_threat(
-    command: str,
-    session_id: str,
-    src_ip: str,
+    command: Optional[str] = None,
+    session_id: Optional[str] = None,
+    src_ip: Optional[str] = None,
+    request_body: Optional[AnalyzeRequest] = Body(None),
     token: str = Depends(verify_token)
 ):
     """Analyze a command for threats using AI"""
     try:
+        # Merge JSON body and query params (JSON takes precedence if provided)
+        if request_body is not None:
+            command = request_body.command or command
+            session_id = request_body.session_id or session_id
+            src_ip = request_body.src_ip or src_ip
+        
+        if not command or not session_id or not src_ip:
+            raise HTTPException(status_code=400, detail="command, session_id, and src_ip are required")
+        
         # Create session data
         session_data = {
             'session_id': session_id,

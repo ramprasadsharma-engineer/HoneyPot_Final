@@ -22,6 +22,7 @@ from sklearn.metrics import classification_report
 import joblib
 import warnings
 warnings.filterwarnings('ignore')
+from time import time
 
 class AIThreatIntelligence:
     def __init__(self, model_path="threat_model.pkl"):
@@ -31,6 +32,10 @@ class AIThreatIntelligence:
         self.classifier = None
         self.anomaly_detector = IsolationForest(contamination=0.1, random_state=42)
         self.threat_database = ThreatDatabase()
+        
+        # Simple TTL cache for IP enrichment
+        self._intel_cache_ttl_seconds = int(os.getenv("HONEYPOT_INTEL_CACHE_TTL", "300"))
+        self._intel_cache: dict[str, tuple[float, dict]] = {}
         
         # Initialize or load existing model
         self.load_or_train_model()
@@ -268,6 +273,11 @@ class AIThreatIntelligence:
     
     async def enrich_with_external_intel(self, ip_address):
         """Enrich IP with external threat intelligence"""
+        now = time()
+        cached = self._intel_cache.get(ip_address)
+        if cached and (now - cached[0]) < self._intel_cache_ttl_seconds:
+            return cached[1]
+        
         enrichment_data = {
             'ip': ip_address,
             'threat_feeds': [],
@@ -285,6 +295,9 @@ class AIThreatIntelligence:
         
         # Calculate overall reputation score
         enrichment_data['reputation_score'] = self.calculate_reputation_score(enrichment_data)
+        
+        # Store in cache
+        self._intel_cache[ip_address] = (now, enrichment_data)
         
         return enrichment_data
     
